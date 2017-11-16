@@ -31,7 +31,8 @@ object MqttClientConnectionFn extends StrictLogging {
                                     settings.password,
                                     settings.sslCertFile,
                                     settings.sslCACertFile,
-                                    settings.sslCertKeyFile
+                                    settings.sslCertKeyFile,
+                                    settings.user
                                   )
 
       val c = new MqttClient(settings.connection, settings.clientId, new MemoryPersistence())
@@ -51,7 +52,8 @@ object MqttClientConnectionFn extends StrictLogging {
                                   settings.password,
                                   settings.sslCertFile,
                                   settings.sslCACertFile,
-                                  settings.sslCertKeyFile
+                                  settings.sslCertKeyFile,
+                                  settings.user
                                 )
 
     val c = new MqttClient(settings.connection, settings.clientId, new MemoryPersistence())
@@ -67,7 +69,8 @@ object MqttClientConnectionFn extends StrictLogging {
                       password: Option[String],
                       sslCertFile: Option[String],
                       sslCACertFile: Option[String],
-                      sslCertKeyFile: Option[String]
+                      sslCertKeyFile: Option[String],
+                      user: Option[String]
                      ) : MqttConnectOptions = {
     val options = new MqttConnectOptions()
     options.setConnectionTimeout(connectionTimeout)
@@ -75,6 +78,10 @@ object MqttClientConnectionFn extends StrictLogging {
     options.setCleanSession(cleanSession)
     password.foreach(p => options.setPassword(p.toCharArray))
     options.setAutomaticReconnect(true)
+    if(user.isDefined)
+    {
+        options.setUserName(user.get)
+    }
 
     sslCertFile.foreach { _ =>
       options.setSocketFactory(
