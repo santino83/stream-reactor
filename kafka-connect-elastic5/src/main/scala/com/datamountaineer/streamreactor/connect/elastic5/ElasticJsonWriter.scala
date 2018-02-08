@@ -25,19 +25,18 @@ import com.datamountaineer.streamreactor.connect.elastic5.indexname.CreateIndex
 import com.datamountaineer.streamreactor.connect.errors.ErrorHandler
 import com.datamountaineer.streamreactor.connect.schemas.ConverterUtil
 import com.fasterxml.jackson.databind.JsonNode
-import com.landoop.json.sql.Field
+import com.landoop.sql.Field
 import com.sksamuel.elastic4s.ElasticDsl._
 import com.sksamuel.elastic4s.Indexable
 import com.typesafe.scalalogging.slf4j.StrictLogging
-import org.apache.kafka.common.config.ConfigException
 import org.apache.kafka.connect.sink.SinkRecord
 import org.elasticsearch.action.support.WriteRequest.RefreshPolicy
 
 import scala.collection.JavaConversions._
+import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 import scala.concurrent.{Await, Future}
 import scala.util.Try
-import scala.concurrent.ExecutionContext.Implicits.global
 
 class ElasticJsonWriter(client: KElasticClient, settings: ElasticSettings)
   extends ErrorHandler with StrictLogging with ConverterUtil {
@@ -50,11 +49,6 @@ class ElasticJsonWriter(client: KElasticClient, settings: ElasticSettings)
   //create the index automatically if it was set to do so
   settings.kcqls.filter(_.isAutoCreate).foreach(client.index)
 
-  settings.kcqls.filter(_.getWriteMode == WriteModeEnum.UPSERT).foreach { kcql =>
-    if (kcql.getPrimaryKeys.size() != 1) {
-      throw new ConfigException(s"UPSERTING into ${kcql.getTarget} needs to have one PK only!")
-    }
-  }
   private val topicKcqlMap = settings.kcqls.groupBy(_.getSource)
 
   private val kcqlMap = new util.IdentityHashMap[Kcql, KcqlValues]()
@@ -105,7 +99,7 @@ class ElasticJsonWriter(client: KElasticClient, settings: ElasticSettings)
   def insert(records: Map[String, Vector[SinkRecord]]): Unit = {
     val fut = records.flatMap {
       case (topic, sinkRecords) =>
-        val kcqls = topicKcqlMap.getOrElse(topic, throw new IllegalArgumentException(s"$topic hasn't been configured in KCQL"))
+        val kcqls = topicKcqlMap.getOrElse(topic, throw new IllegalArgumentException(s"$topic hasn't been configured in KCQL. Configured topics is ${topicKcqlMap.keys.mkString(",")}"))
 
         //we might have multiple inserts from the same Kafka Message
         kcqls.flatMap { kcql =>
@@ -115,31 +109,37 @@ class ElasticJsonWriter(client: KElasticClient, settings: ElasticSettings)
           sinkRecords.grouped(settings.batchSize)
             .map { batch =>
               val indexes = batch.map { r =>
+                val (json, pks) = if(kcqlValue.primaryKeysPath.isEmpty) {
+                  (Transform(
+                    kcqlValue.fields,
+                    kcqlValue.ignoredFields,
+                    r.valueSchema(),
+                    r.value(),
+                    kcql.hasRetainStructure
+                  ), Seq.empty)
+                } else {
+                  TransformAndExtractPK(
+                    kcqlValue.fields,
+                    kcqlValue.ignoredFields,
+                    kcqlValue.primaryKeysPath,
+                    r.valueSchema(),
+                    r.value(),
+                    kcql.hasRetainStructure)
+                }
+                val idFromPk = pks.mkString(settings.pkJoinerSeparator);
 
                 kcql.getWriteMode match {
                   case WriteModeEnum.INSERT =>
-                    val json = Transform(
-                      kcqlValue.fields,
-                      kcqlValue.ignoredFields,
-                      r.valueSchema(),
-                      r.value(),
-                      kcql.hasRetainStructure
-                    )
-
-                    indexInto(i / documentType).source(json.toString)
+                    indexInto(i / documentType)
+                      .id(if (idFromPk.isEmpty) autoGenId(r) else idFromPk)
+                      .pipeline(kcql.getPipeline)
+                      .source(json.toString)
 
                   case WriteModeEnum.UPSERT =>
-                    val (json, pks) = TransformAndExtractPK(
-                      kcqlValue.fields,
-                      kcqlValue.ignoredFields,
-                      kcqlValue.primaryKeysPath,
-                      r.valueSchema(),
-                      r.value(),
-                      kcql.hasRetainStructure
-                    )
-
                     require(pks.nonEmpty, "Error extracting primary keys")
-                    update(pks.head).in(i / documentType).docAsUpsert(json)(IndexableJsonNode)
+                    update(idFromPk)
+                      .in(i / documentType)
+                      .docAsUpsert(json)(IndexableJsonNode)
                 }
               }
 
@@ -153,6 +153,16 @@ class ElasticJsonWriter(client: KElasticClient, settings: ElasticSettings)
         Await.result(Future.sequence(fut), settings.writeTimeout.seconds)
       )
     )
+  }
+
+  /**
+    * Create id from record infos
+    *
+    * @param record One SinkRecord
+    **/
+  def autoGenId(record: SinkRecord): String = {
+    val pks = Seq(record.topic(), record.kafkaPartition(), record.kafkaOffset())
+    pks.mkString(settings.pkJoinerSeparator)
   }
 
   private case class KcqlValues(fields: Seq[Field],

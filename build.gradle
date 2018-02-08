@@ -26,7 +26,7 @@ buildscript {
         }
     }
     dependencies {
-        classpath 'com.github.maiflai:gradle-scalatest:0.16'
+        classpath 'com.github.maiflai:gradle-scalatest:0.18'
         classpath 'net.researchgate:gradle-release:2.6.0'
         classpath "org.github.ngbinh.scalastyle:gradle-scalastyle-plugin_2.11:0.9.0"
         classpath 'com.github.jengelman.gradle.plugins:shadow:2.0.1'
@@ -115,15 +115,21 @@ allprojects {
         slf4jVersion = "1.7.7"
         json4sVersion = "3.5.3"
         gsonVersion = "2.6.2"
-        KCQLVersion = "2.2.0"
+        KCQLVersion = "2.4.0"
         akkaVersion = "2.4.10"
-        connectCLIVersion = "1.0.3"
+        connectCLIVersion = "1.0.6"
+
+        // The following 4 need to align to compile against a particular version
+        confluentVersion = '4.0.0'
+        kafkaVersion = '1.0.0'
+        dataMountaineerCommonVersion = "1.0.5"
+        dataMountaineerTestKitVersion = "0.7"
 
 //        // The following 4 need to align to compile against a particular version
-        confluentVersion = '3.3.0'
-        kafkaVersion = '0.11.0.0'
-        dataMountaineerCommonVersion = "0.9.0"
-        dataMountaineerTestKitVersion = "0.6"
+//        confluentVersion = '3.3.0'
+//        kafkaVersion = '0.11.0.0'
+//        dataMountaineerCommonVersion = "0.9.7"
+//        dataMountaineerTestKitVersion = "0.6"
 
 //        // Confluent 3.2
 //        confluentVersion = '3.2.2'
@@ -139,18 +145,18 @@ allprojects {
 
         //release
         rootRelease = "${project.rootDir}/release/"
-        versionDir = "${rootRelease}/${project.description}-${project.version}-${confluentVersion}"
+        versionDir = "${rootRelease}/${project.description}-${project.version}-${kafkaVersion}"
         confDir = "${versionDir}/conf"
         libsDir = "${versionDir}/libs"
         binDir = "${versionDir}/bin"
-        tarName = "${project.description}-${project.version}-${confluentVersion}.tar.gz"
-        cliUrl = "https://github.com/datamountaineer/kafka-connect-tools/releases/download/v${connectCLIVersion}/connect-cli"
-        srCliUrlDarwin = "https://github.com/datamountaineer/schema-registry/releases/download/0.0.1/sr-cli-osx"
-        srCliUrlLinux = "https://github.com/datamountaineer/schema-registry/releases/download/0.0.1/sr-cli-linux"
+        tarName = "${project.description}-${project.version}-${kafkaVersion}.tar.gz"
+        cliUrl = "https://github.com/landoop/kafka-connect-tools/releases/download/v${connectCLIVersion}/connect-cli"
+        srCliUrlDarwin = "https://github.com/landoop/schema-registry/releases/download/0.0.1/sr-cli-osx"
+        srCliUrlLinux = "https://github.com/landoop/schema-registry/releases/download/0.0.1/sr-cli-linux"
     }
 
     repositories {
-        mavenLocal()
+        //mavenLocal()
         mavenCentral()
         maven { url "http://packages.confluent.io/maven/" }
         maven { url "http://repo.typesafe.com/typesafe/releases/" }
@@ -166,32 +172,34 @@ allprojects {
             attributes( "StreamReactor-Version": project.version,
                         "KCQL-Version" : "${KCQLVersion}",
                         "Kafka-Version": "${kafkaVersion}",
-                        "Created-By" : "DataMountaineer",
+                        "Created-By" : "Landoop",
                         "Created-At" : getDateTime(),
                         "Git-Repo": getGitRepo(),
                         "Git-Commit-Hash": getGitHash(),
                         "Git-Tag": getGitTag(),
-                        "StreamReactor-Docs" : "http://docs.datamountaineer.com/en/${project.version}/"
+                        "StreamReactor-Docs" : "https://lenses.stream/"
             )
         }
     }
 
     shadowJar {
         configurations = [project.configurations.runtime]
-        baseName = "${project.name}-${project.version}-${confluentVersion}-all"
+        baseName = "${project.name}-${project.version}-${kafkaVersion}-all"
         classifier = null
         version = null
 
         zip64 true
 
         manifest {
-            attributes( "Implementation-Title": "Stream Reactor",
-                        "Implementation-Version": project.version,
-                        "Created-By" : "DataMountaineer",
-                        "Created-At" : getDateTime(),
-                        "Git-Commit-Hash": getGitHash(),
-                        "Git-Tag": getGitTag(),
-                        "Documentation" : "http://docs.datamountaineer.com/en/${project.version}/"
+            attributes( "StreamReactor-Version": project.version,
+                    "KCQL-Version" : "${KCQLVersion}",
+                    "Kafka-Version": "${kafkaVersion}",
+                    "Created-By" : "Landoop",
+                    "Created-At" : getDateTime(),
+                    "Git-Repo": getGitRepo(),
+                    "Git-Commit-Hash": getGitHash(),
+                    "Git-Tag": getGitTag(),
+                    "StreamReactor-Docs" : "https://lenses.stream/"
             )
         }
 
@@ -290,14 +298,14 @@ allprojects {
         archives javadocJar, scaladocJar, sourcesJar
     }
 
-/*
+
     signing {
         ext.isReleaseVersion = !version.endsWith("SNAPSHOT")
         required { isReleaseVersion }
         // required { isReleaseVersion && gradle.taskGraph.hasTask("uploadArchives") }
         sign configurations.archives
     }
-*/
+
 
     if (project.hasProperty('release') && project.name != "kafka-connect-deployment") {
         // OSSRH publication
@@ -317,12 +325,12 @@ allprojects {
                         name project.name
                         description project.description
                         packaging 'jar'
-                        url 'https://github.com/datamountaineer/stream-reactor'
+                        url 'https://github.com/landoop/stream-reactor'
 
                         scm {
-                            connection 'scm:git:https://github.com/datamountaineer/stream-reactor.git'
-                            developerConnection 'scm:git:git@github.com:datamountaineer/stream-reactor.git'
-                            url 'https://github.com/datamountaineer/stream-reactor.git'
+                            connection 'scm:git:https://github.com/landoop/stream-reactor.git'
+                            developerConnection 'scm:git:git@github.com:landoop/stream-reactor.git'
+                            url 'https://github.com/landoop/stream-reactor.git'
                         }
 
                         licenses {
@@ -401,7 +409,7 @@ task collectConfs(type: Copy, dependsOn: prepareReleaseDir) {
 task collectBin(type: Copy, dependsOn: prepareReleaseDir) {
     from("${project.rootDir}/bin") {
         filter { it.replaceAll('@@CLI_VERSION@@', connectCLIVersion) }
-        filter { it.replaceAll('@@STREAM_REACTOR_VERSION@@', "${project.version}-${confluentVersion}") }
+        filter { it.replaceAll('@@STREAM_REACTOR_VERSION@@', "${project.version}-${kafkaVersion}") }
     }
     into binDir
 }

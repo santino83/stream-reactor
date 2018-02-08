@@ -16,7 +16,10 @@
 
 package com.datamountaineer.streamreactor.connect.influx.writers
 
+import java.util.concurrent.TimeUnit
+
 import com.datamountaineer.kcql.{Field, Kcql, Tag}
+import com.datamountaineer.streamreactor.connect.influx.NanoClock
 import com.datamountaineer.streamreactor.connect.influx.config.InfluxSettings
 import com.landoop.json.sql.JacksonJson
 import com.typesafe.scalalogging.slf4j.StrictLogging
@@ -26,6 +29,7 @@ import org.apache.kafka.connect.sink.SinkRecord
 import org.influxdb.dto.{BatchPoints, Point}
 
 import scala.collection.JavaConversions._
+import scala.concurrent.duration.TimeUnit
 
 
 /**
@@ -37,7 +41,9 @@ import scala.collection.JavaConversions._
   *
   * @param settings - An instance of [[InfluxSettings]]
   */
-class InfluxBatchPointsBuilder(settings: InfluxSettings) extends StrictLogging {
+class InfluxBatchPointsBuilder(settings: InfluxSettings, nanoClock: NanoClock) extends StrictLogging {
+  //  private val nanoClock = new NanoClock()
+
   //We build a map to cache the field paths. Avoids creating it everytime
   private val kcqlMap = settings.kcqls.groupBy(_.getSource).map { case (topic, kcqls) =>
     def buildFieldPath(field: Field) = {
@@ -113,13 +119,17 @@ class InfluxBatchPointsBuilder(settings: InfluxSettings) extends StrictLogging {
 
     kcqls.map { k =>
 
+      var tsUnit: Option[TimeUnit] = None
       val timestamp = k.timestampField.map { implicit fieldPath =>
         val tsRaw = ValuesExtractor.extract(map, fieldPath)
         TimestampValueCoerce(tsRaw)
-      }.getOrElse(System.currentTimeMillis())
+      }.getOrElse {
+        tsUnit = Some(TimeUnit.NANOSECONDS)
+        nanoClock.getEpochNanos
+      }
 
       val measurement = getMeasurement(k) { fieldPath => ValuesExtractor.extract(map, fieldPath) }
-      implicit val builder = Point.measurement(measurement).time(timestamp, k.kcql.getTimestampUnit)
+      implicit val builder = Point.measurement(measurement).time(timestamp, tsUnit.getOrElse(k.kcql.getTimestampUnit))
 
       buildPointFields(k,
         ValuesExtractor.extract(map, _),
@@ -162,13 +172,18 @@ class InfluxBatchPointsBuilder(settings: InfluxSettings) extends StrictLogging {
     val kcqls = kcqlMap.getOrElse(record.topic(), throw new ConfigException(s"Topic '${record.topic()}' is missing KCQL mapping."))
 
     kcqls.map { k =>
+
+      var tsUnit: Option[TimeUnit] = None
       val timestamp = k.timestampField.map { implicit fieldPath =>
         val tsRaw = ValuesExtractor.extract(json, fieldPath)
         TimestampValueCoerce(tsRaw)
-      }.getOrElse(System.currentTimeMillis())
+      }.getOrElse {
+        tsUnit = Some(TimeUnit.NANOSECONDS)
+        nanoClock.getEpochNanos
+      }
 
       val measurement = getMeasurement(k) { fieldPath => ValuesExtractor.extract(json, fieldPath) }
-      implicit val builder = Point.measurement(measurement).time(timestamp, k.kcql.getTimestampUnit)
+      implicit val builder = Point.measurement(measurement).time(timestamp, tsUnit.getOrElse(k.kcql.getTimestampUnit))
 
       buildPointFields(k,
         ValuesExtractor.extract(json, _),
@@ -216,13 +231,17 @@ class InfluxBatchPointsBuilder(settings: InfluxSettings) extends StrictLogging {
     val kcqls = kcqlMap.getOrElse(record.topic(), throw new ConfigException(s"Topic '${record.topic()}' is missing KCQL mapping."))
 
     kcqls.map { k =>
+      var tsUnit: Option[TimeUnit] = None
       val timestamp = k.timestampField.map { implicit fieldPath =>
         val tsRaw = ValuesExtractor.extract(struct, fieldPath)
         TimestampValueCoerce(tsRaw)
-      }.getOrElse(System.currentTimeMillis())
+      }.getOrElse {
+        tsUnit = Some(TimeUnit.NANOSECONDS)
+        nanoClock.getEpochNanos
+      }
 
       val measurement = getMeasurement(k) { fieldPath => ValuesExtractor.extract(struct, fieldPath) }
-      implicit val builder = Point.measurement(measurement).time(timestamp, k.kcql.getTimestampUnit)
+      implicit val builder = Point.measurement(measurement).time(timestamp, tsUnit.getOrElse(k.kcql.getTimestampUnit))
 
       buildPointFields(k,
         ValuesExtractor.extract(struct, _),
@@ -271,7 +290,9 @@ class InfluxBatchPointsBuilder(settings: InfluxSettings) extends StrictLogging {
       case value: Float => builder.addField(field, value)
       case value: Boolean => builder.addField(field, value)
       case value: java.math.BigDecimal => builder.addField(field, value)
+      case value: BigDecimal => builder.addField(field, value.bigDecimal)
       case value: String => builder.addField(field, value)
+      case value: java.util.Date => builder.addField(field, value.getTime)
       //we should never reach this since the extractor should not allow it
       case value => sys.error(s"Can't select field:'$field' because it leads to value:'$value' (${Option(value).map(_.getClass.getName).getOrElse("")})is not a valid type for InfluxDb.")
     }

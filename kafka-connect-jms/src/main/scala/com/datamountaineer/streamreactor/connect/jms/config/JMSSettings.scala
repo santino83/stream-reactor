@@ -47,7 +47,8 @@ case class JMSSettings(connectionURL: String,
                        password: Option[Password],
                        batchSize: Int,
                        errorPolicy: ErrorPolicy = new ThrowErrorPolicy,
-                       retries: Int) {
+                       retries: Int,
+                       pollingTimeout: Long) {
   require(connectionURL != null && connectionURL.trim.length > 0, "Invalid connection URL")
   require(connectionFactoryClass != null, "Invalid class for connection factory")
 }
@@ -72,6 +73,7 @@ object JMSSettings extends StrictLogging {
     val batchSize = config.getInt(JMSConfigConstants.BATCH_SIZE)
     val fields = config.getFieldsMap()
     val ignoreFields = config.getIgnoreFieldsMap()
+    val pollingTimeout = config.getLong(JMSConfigConstants.POLLING_TIMEOUT_CONFIG)
 
     val initialContextFactoryClass = config.getString(JMSConfigConstants.INITIAL_CONTEXT_FACTORY)
     val clazz = config.getString(JMSConfigConstants.CONNECTION_FACTORY)
@@ -86,14 +88,14 @@ object JMSSettings extends StrictLogging {
 
     val defaultConverter = Option(defaultConverterClassName)
       .filterNot(c => c.isEmpty).map { c =>
-      Try(getClass.getClassLoader.loadClass(c)) match {
+      Try(Class.forName(c)) match {
         case Failure(_) => throw new ConfigException(s"Invalid ${JMSConfigConstants.DEFAULT_CONVERTER_CONFIG}.$c can't be found")
         case Success(clz) =>
           if (!classOf[Converter].isAssignableFrom(clz)) {
             throw new ConfigException(s"Invalid ${JMSConfigConstants.DEFAULT_CONVERTER_CONFIG}. $c is not inheriting Converter")
           }
           logger.info(s"Creating converter instance for $c")
-          val converter = Try(this.getClass.getClassLoader.loadClass(c).newInstance()) match {
+          val converter = Try(Class.forName(c).newInstance()) match {
             case Success(value) => value.asInstanceOf[Converter]
             case Failure(_) => throw new ConfigException(s"${JMSConfigConstants.DEFAULT_CONVERTER_CONFIG} is invalid. $c should have an empty ctor!")
           }
@@ -112,7 +114,7 @@ object JMSSettings extends StrictLogging {
     val convertersMap = converters.map( {
       case (jms_source, clazz) => {
         logger.info(s"Creating converter instance for $clazz")
-        val converter = Try(this.getClass.getClassLoader.loadClass(clazz).newInstance()) match {
+        val converter = Try(Class.forName(clazz).newInstance()) match {
           case Success(value) => value.asInstanceOf[Converter]
           case Failure(_) => throw new ConfigException(s"Invalid ${JMSConfigConstants.KCQL} is invalid for $jms_source. $clazz should have an empty ctor!")
         }
@@ -161,7 +163,8 @@ object JMSSettings extends StrictLogging {
       Option(password),
       batchSize,
       errorPolicy,
-      nbrOfRetries)
+      nbrOfRetries,
+      pollingTimeout)
   }
 
   def getFormatType(kcql: Kcql) : FormatType = Option(kcql.getFormatType).getOrElse(FormatType.JSON)

@@ -108,6 +108,10 @@ object ElasticConfig {
       ConfigDef.Width.SHORT,
       ElasticConfigConstants.NBR_OF_RETRIES_CONFIG
     )
+    .define(ElasticConfigConstants.ERROR_RETRY_INTERVAL, Type.INT,
+      ElasticConfigConstants.ERROR_RETRY_INTERVAL_DEFAULT, Importance.MEDIUM,
+      ElasticConfigConstants.ERROR_RETRY_INTERVAL_DOC,
+      "Error", 3, ConfigDef.Width.LONG, ElasticConfigConstants.ERROR_RETRY_INTERVAL)
     .define(
       ElasticConfigConstants.KCQL,
       Type.STRING,
@@ -117,6 +121,16 @@ object ElasticConfig {
       1,
       ConfigDef.Width.LONG,
       ElasticConfigConstants.KCQL)
+    .define(
+      ElasticConfigConstants.PK_JOINER_SEPARATOR,
+      Type.STRING,
+      ElasticConfigConstants.PK_JOINER_SEPARATOR_DEFAULT,
+      Importance.LOW,
+      ElasticConfigConstants.PK_JOINER_SEPARATOR_DOC,
+      "KCQL",
+      2,
+      ConfigDef.Width.SHORT,
+      ElasticConfigConstants.PK_JOINER_SEPARATOR)
     .define(
       ElasticConfigConstants.ES_CLUSTER_XPACK_SETTINGS,
       Type.PASSWORD,

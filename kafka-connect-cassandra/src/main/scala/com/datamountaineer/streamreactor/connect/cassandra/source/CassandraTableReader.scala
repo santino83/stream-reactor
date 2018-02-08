@@ -61,10 +61,8 @@ class CassandraTableReader(private val name: String,
   private val preparedStatementNoOffset = getPreparedStatementNoOffset
   private val preparedStatement = getPreparedStatements
   private var tableOffset: Option[String] = buildOffsetMap(context)
-  // TODO: add this to configuration
-  private val timeSliceDuration: Long = 10000
-  // TODO: add this to configuration
-  private val timeSliceDelay: Long = 0
+  private val timeSliceDuration: Long = setting.timeSliceDuration
+  private val timeSliceDelay: Long = setting.timeSliceDelay
   private var timeSliceValue: Long = timeSliceDuration
   private val sourcePartition = Collections.singletonMap(CassandraConfigConstants.ASSIGNED_TABLES, table)
   private val schemaName = s"$keySpace.$table".replace('-', '.')
@@ -72,6 +70,8 @@ class CassandraTableReader(private val name: String,
   private var schema: Option[Schema] = None
   private val ignoreList = config.getIgnoredFields.map(_.getName).toSet
   private val isTokenBased = cqlGenerator.isTokenBased()
+  private val cassandraTypeConverter : CassandraTypeConverter =
+    new CassandraTypeConverter(session.getCluster.getConfiguration.getCodecRegistry, setting)
   private var structColDefs: List[ColumnDefinitions.Definition] = _
 
   /**
@@ -176,6 +176,7 @@ class CassandraTableReader(private val name: String,
     logger.info(s"Connector $name query ${preparedStatement.getQueryString} executing with bindings ($formattedPrevious, $formattedNow).")
     // bind the offset and db time
     val bound = preparedStatement.bind(Date.from(previous), Date.from(upperBound))
+    bound.setFetchSize(setting.fetchSize)
     session.executeAsync(bound)
   }
 
@@ -188,6 +189,7 @@ class CassandraTableReader(private val name: String,
   private def bindAndFireTokenQuery(lastToken: String) = {
     val bound = preparedStatement.bind(java.util.UUID.fromString(lastToken))
     logger.debug(s"Connector $name query ${preparedStatement.getQueryString} executing with bindings ($lastToken).")
+    bound.setFetchSize(setting.fetchSize)
     session.executeAsync(bound)
   }
 
@@ -201,6 +203,7 @@ class CassandraTableReader(private val name: String,
     val bound = ps.bind()
     //execute the query
     logger.debug(s"Connector $name query ${ps.getQueryString} executing.")
+    bound.setFetchSize(setting.fetchSize)
     session.executeAsync(bound)
   }
 
@@ -230,6 +233,10 @@ class CassandraTableReader(private val name: String,
             index = 100
             shouldStop = stop.get()
           }
+
+          // this is asynchronous
+          if ((rs.getAvailableWithoutFetching == setting.fetchSize / 2) && !rs.isFullyFetched) rs.fetchMoreResults
+
           val row = iter.next()
           Try {
             // if not bulk get the maxOffset value 
@@ -245,12 +252,13 @@ class CassandraTableReader(private val name: String,
             counter += 1
           } match {
             case Failure(e) =>
+              logger.error(s"Connector $name error processing row ${row.toString} for table $keySpace.$table.", e)
               reset(tableOffset)
-              throw new ConnectException(s"Connector $name error processing row ${row.toString} for table $table.", e)
+              throw new ConnectException(s"Connector $name error processing row ${row.toString} for table $keySpace.$table.", e)
             case Success(_) =>
           }
         }
-        logger.info(s"Connector $name processed $counter row(-s) for table $topic.$table")
+        logger.info(s"Connector $name processed $counter row(-s) into $topic topic for table $table")
 
         alterTimeSliceValueBasedOnRowsProcessess(counter)
 
@@ -303,9 +311,9 @@ class CassandraTableReader(private val name: String,
   private def processRow(row: Row) = {
     // convert the cassandra row to a struct
     if (structColDefs == null) {
-      structColDefs = CassandraUtils.getStructColumns(row, ignoreList)
+      structColDefs = cassandraTypeConverter.getStructColumns(row, ignoreList)
     }
-    val struct = CassandraUtils.convert(row, schemaName, structColDefs, schema)
+    val struct = cassandraTypeConverter.convert(row, schemaName, structColDefs, schema)
 
     // get the offset for this value
     val offset: String = if (isTokenBased) {

@@ -18,34 +18,39 @@ package com.datamountaineer.streamreactor.connect.elastic5
 
 import java.util
 
-import com.datamountaineer.streamreactor.connect.elastic5.config.{ElasticConfig, ElasticConfigConstants}
-import com.datamountaineer.streamreactor.connect.utils.{ProgressCounter, ReadManifest}
+import com.datamountaineer.streamreactor.connect.elastic5.config.{ElasticConfig, ElasticConfigConstants, ElasticSettings}
+import com.datamountaineer.streamreactor.connect.errors.ErrorPolicyEnum
+import com.datamountaineer.streamreactor.connect.utils.{JarManifest, ProgressCounter}
 import com.typesafe.scalalogging.slf4j.StrictLogging
 import org.apache.kafka.clients.consumer.OffsetAndMetadata
 import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.connect.sink.{SinkRecord, SinkTask}
 
 import scala.collection.JavaConversions._
-import scala.util.{Failure, Success, Try}
 
 class ElasticSinkTask extends SinkTask with StrictLogging {
   private var writer: Option[ElasticJsonWriter] = None
   private val progressCounter = new ProgressCounter
   private var enableProgress: Boolean = false
+  private val manifest = JarManifest(getClass.getProtectionDomain.getCodeSource.getLocation)
 
   /**
     * Parse the configurations and setup the writer
     **/
   override def start(props: util.Map[String, String]): Unit = {
     logger.info(scala.io.Source.fromInputStream(getClass.getResourceAsStream("/elastic-ascii.txt")).mkString + s" v $version")
-    Try(logger.info(ReadManifest.mainfest())) match {
-      case Failure(_) => logger.info("No manifest details found")
-      case Success(_) =>
-    }
-
+    logger.info(manifest.printManifest())
     ElasticConfig.config.parse(props)
     val sinkConfig = ElasticConfig(props)
     enableProgress = sinkConfig.getBoolean(ElasticConfigConstants.PROGRESS_COUNTER_ENABLED)
+
+
+    //if error policy is retry set retry interval
+    val settings = ElasticSettings(sinkConfig)
+    if (settings.errorPolicy.equals(Option(ErrorPolicyEnum.RETRY))) {
+      context.timeout(sinkConfig.getString(ElasticConfigConstants.ERROR_RETRY_INTERVAL).toLong)
+    }
+
     writer = Some(ElasticWriter(sinkConfig))
   }
 
@@ -75,5 +80,5 @@ class ElasticSinkTask extends SinkTask with StrictLogging {
     logger.info("Flushing Elastic Sink")
   }
 
-  override def version: String = Option(getClass.getPackage.getImplementationVersion).getOrElse("")
+  override def version: String = manifest.version()
 }

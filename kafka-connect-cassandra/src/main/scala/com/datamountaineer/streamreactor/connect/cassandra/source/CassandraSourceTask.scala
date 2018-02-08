@@ -22,7 +22,7 @@ import java.util.concurrent.LinkedBlockingQueue
 import com.datamountaineer.streamreactor.connect.cassandra.CassandraConnection
 import com.datamountaineer.streamreactor.connect.cassandra.config.{CassandraConfigConstants, CassandraConfigSource, CassandraSettings, CassandraSourceSetting}
 import com.datamountaineer.streamreactor.connect.queues.QueueHelpers
-import com.datamountaineer.streamreactor.connect.utils.ReadManifest
+import com.datamountaineer.streamreactor.connect.utils.JarManifest
 import com.typesafe.scalalogging.slf4j.StrictLogging
 import org.apache.kafka.connect.errors.ConnectException
 import org.apache.kafka.connect.source.{SourceRecord, SourceTask}
@@ -50,6 +50,7 @@ class CassandraSourceTask extends SourceTask with StrictLogging {
   private var tracker: Long = 0
   private var pollInterval: Long = CassandraConfigConstants.DEFAULT_POLL_INTERVAL
   private var name: String = ""
+  private val manifest = JarManifest(getClass.getProtectionDomain.getCodeSource.getLocation)
 
 
   /**
@@ -64,11 +65,9 @@ class CassandraSourceTask extends SourceTask with StrictLogging {
       case Failure(f) => throw new ConnectException("Couldn't start CassandraSource due to configuration error.", f)
       case Success(s) => Some(s)
     }
+
     logger.info(scala.io.Source.fromInputStream(getClass.getResourceAsStream("/cass-source-ascii.txt")).mkString + s" v $version")
-    Try(logger.info(ReadManifest.mainfest())) match {
-      case Failure(_) => logger.info("No manifest details found")
-      case Success(_) =>
-    }
+    logger.info(manifest.printManifest())
 
     //get the list of assigned tables this sink
     val assigned = taskConfig.get.getString(CassandraConfigConstants.ASSIGNED_TABLES).split(",").toList
@@ -184,7 +183,7 @@ class CassandraSourceTask extends SourceTask with StrictLogging {
     *
     * @return
     */
-  override def version: String = Option(getClass.getPackage.getImplementationVersion).getOrElse("")
+  override def version: String = manifest.version()
 
 
   /**

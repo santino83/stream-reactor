@@ -23,10 +23,10 @@ import com.datamountaineer.kcql.Kcql
 import com.datamountaineer.streamreactor.connect.converters.source.Converter
 import com.datamountaineer.streamreactor.connect.mqtt.config.{MqttConfigConstants, MqttSourceConfig, MqttSourceSettings}
 import com.datamountaineer.streamreactor.connect.mqtt.connection.MqttClientConnectionFn
-import com.datamountaineer.streamreactor.connect.utils.{ProgressCounter, ReadManifest}
+import com.datamountaineer.streamreactor.connect.utils.{ProgressCounter, JarManifest}
 import com.typesafe.scalalogging.slf4j.StrictLogging
+import org.apache.kafka.common.config.ConfigException
 import org.apache.kafka.connect.source.{SourceRecord, SourceTask}
-import org.apache.zookeeper.server.quorum.QuorumPeerConfig.ConfigException
 
 import scala.collection.JavaConversions._
 import scala.util.{Failure, Success, Try}
@@ -35,14 +35,13 @@ class MqttSourceTask extends SourceTask with StrictLogging {
   private val progressCounter = new ProgressCounter
   private var enableProgress: Boolean = false
   private var mqttManager: Option[MqttManager] = None
+  private val manifest = JarManifest(getClass.getProtectionDomain.getCodeSource.getLocation)
 
   override def start(props: util.Map[String, String]): Unit = {
 
     logger.info(scala.io.Source.fromInputStream(this.getClass.getResourceAsStream("/mqtt-source-ascii.txt")).mkString + s" v $version")
-    Try(logger.info(ReadManifest.mainfest())) match {
-      case Failure(_) => logger.info("No manifest details found")
-      case Success(_) =>
-    }
+    logger.info(manifest.printManifest())
+
     implicit val settings = MqttSourceSettings(MqttSourceConfig(props))
 
     settings.sslCACertFile.foreach { file =>
@@ -65,7 +64,7 @@ class MqttSourceTask extends SourceTask with StrictLogging {
 
     val convertersMap = settings.sourcesToConverters.map { case (topic, clazz) =>
       logger.info(s"Creating converter instance for $clazz")
-      val converter = Try(this.getClass.getClassLoader.loadClass(clazz).newInstance()) match {
+      val converter = Try(Class.forName(clazz).newInstance()) match {
         case Success(value) => value.asInstanceOf[Converter]
         case Failure(_) => throw new ConfigException(s"Invalid ${MqttConfigConstants.KCQL_CONFIG} is invalid. $clazz should have an empty ctor!")
       }
@@ -73,6 +72,7 @@ class MqttSourceTask extends SourceTask with StrictLogging {
       converter.initialize(props.asScala.toMap)
       topic -> converter
     }
+
     logger.info("Starting Mqtt source...")
     mqttManager = Some(new MqttManager(MqttClientConnectionFn.apply, convertersMap, settings.mqttQualityOfService, settings.kcql.map(Kcql.parse), settings.throwOnConversion, settings.pollingTimeout))
     enableProgress = settings.enableProgress
@@ -104,5 +104,5 @@ class MqttSourceTask extends SourceTask with StrictLogging {
     progressCounter.empty
   }
 
-  override def version: String = Option(getClass.getPackage.getImplementationVersion).getOrElse("")
+  override def version: String = manifest.version()
 }

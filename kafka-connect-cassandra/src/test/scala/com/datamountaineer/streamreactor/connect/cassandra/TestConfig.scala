@@ -102,10 +102,12 @@ trait TestConfig extends MockitoSugar {
   }  
 
   def createKeySpace(keyspace: String, secure: Boolean = false, ssl: Boolean = false, port: Int = CASSANDRA_PORT): Session = {
+
     val cluster: Builder = Cluster
       .builder()
       .addContactPoints(CONTACT_POINT)
       .withPort(port)
+
 
     if (secure) cluster.withCredentials(USERNAME.trim, PASSWD.trim)
     if (ssl) {

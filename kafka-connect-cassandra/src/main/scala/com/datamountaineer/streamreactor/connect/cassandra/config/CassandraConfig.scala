@@ -281,6 +281,56 @@ object CassandraConfigSource {
       7,
       ConfigDef.Width.LONG,
       CassandraConfigConstants.ALLOW_FILTERING)
+      
+    .define(CassandraConfigConstants.TIME_SLICE_MILLIS,
+      Type.LONG,
+      CassandraConfigConstants.TIME_SLICE_MILLIS_DEFAULT,
+      Importance.MEDIUM,
+      CassandraConfigConstants.TIME_SLICE_MILLIS_DOC,
+      "Import",
+      7,
+      ConfigDef.Width.LONG,
+      CassandraConfigConstants.TIME_SLICE_MILLIS)      
+
+    .define(CassandraConfigConstants.TIMESLICE_DURATION,
+      Type.LONG,
+      CassandraConfigConstants.TIMESLICE_DURATION_DEFAULT,
+      Importance.MEDIUM,
+      CassandraConfigConstants.TIMESLICE_DURATION_DOC,
+      "Import",
+      8,
+      ConfigDef.Width.SHORT,
+      CassandraConfigConstants.TIMESLICE_DURATION)
+
+    .define(CassandraConfigConstants.TIMESLICE_DELAY,
+      Type.LONG,
+      CassandraConfigConstants.TIMESLICE_DELAY_DEFAULT,
+      Importance.MEDIUM,
+      CassandraConfigConstants.TIMESLICE_DELAY_DOC,
+      "Import",
+      9,
+      ConfigDef.Width.SHORT,
+      CassandraConfigConstants.TIMESLICE_DELAY)      
+      
+    .define(CassandraConfigConstants.INITIAL_OFFSET,
+      Type.STRING,
+      CassandraConfigConstants.INITIAL_OFFSET_DEFAULT,
+      Importance.MEDIUM,
+      CassandraConfigConstants.INITIAL_OFFSET_DOC,
+      "Import",
+      10,
+      ConfigDef.Width.MEDIUM,
+      CassandraConfigConstants.INITIAL_OFFSET)
+
+    .define(CassandraConfigConstants.MAPPING_COLLECTION_TO_JSON,
+      Type.BOOLEAN,
+      CassandraConfigConstants.MAPPING_COLLECTION_TO_JSON_DEFAULT,
+      Importance.MEDIUM,
+      CassandraConfigConstants.MAPPING_COLLECTION_TO_JSON_DOC,
+      "Import",
+      11,
+      ConfigDef.Width.LONG,
+      CassandraConfigConstants.MAPPING_COLLECTION_TO_JSON)
 
 }
 

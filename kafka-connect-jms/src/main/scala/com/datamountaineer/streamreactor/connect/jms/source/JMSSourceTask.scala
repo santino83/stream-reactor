@@ -17,17 +17,20 @@
 package com.datamountaineer.streamreactor.connect.jms.source
 
 import java.util
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 import javax.jms.Message
 
 import com.datamountaineer.streamreactor.connect.jms.config.{JMSConfig, JMSConfigConstants, JMSSettings}
 import com.datamountaineer.streamreactor.connect.jms.source.readers.JMSReader
-import com.datamountaineer.streamreactor.connect.utils.{ProgressCounter, ReadManifest}
+import com.datamountaineer.streamreactor.connect.utils.{JarManifest, ProgressCounter}
 import com.typesafe.scalalogging.slf4j.StrictLogging
 import org.apache.kafka.connect.source.{SourceRecord, SourceTask}
 
 import scala.collection.JavaConversions._
+import scala.collection.JavaConverters._
 import scala.collection.mutable
-import scala.util.{Failure, Success, Try}
+import scala.util.{Failure, Success}
 
 /**
   * Created by andrew@datamountaineer.com on 10/03/2017. 
@@ -37,24 +40,34 @@ class JMSSourceTask extends SourceTask with StrictLogging {
   var reader: JMSReader = _
   val progressCounter = new ProgressCounter
   private var enableProgress: Boolean = false
+  private val pollingTimeout: AtomicLong = new AtomicLong(0L)
   private var ackMessage: Option[Message] = None
+  private val recordsToCommit = new ConcurrentHashMap[SourceRecord, SourceRecord]()
+  private val manifest = JarManifest(getClass.getProtectionDomain.getCodeSource.getLocation)
 
   override def start(props: util.Map[String, String]): Unit = {
     logger.info(scala.io.Source.fromInputStream(getClass.getResourceAsStream("/jms-source-ascii.txt")).mkString + s" v $version")
-    Try(logger.info(ReadManifest.mainfest())) match {
-      case Failure(_) => logger.info("No manifest details found")
-      case Success(_) =>
-    }
+    logger.info(manifest.printManifest())
+
     JMSConfig.config.parse(props)
     val config = new JMSConfig(props)
     val settings = JMSSettings(config, sink = false)
     reader = JMSReader(settings)
     enableProgress = config.getBoolean(JMSConfigConstants.PROGRESS_COUNTER_ENABLED)
+    pollingTimeout.set(settings.pollingTimeout)
   }
 
   override def stop(): Unit = {
     logger.info("Stopping JMS readers")
-    reader.stop
+
+    synchronized {
+      this.notifyAll()
+    }
+
+    reader.stop match {
+      case Failure(t) => logger.error(s"Error encountered while stopping JMS Source Task. $t")
+      case Success(_) => logger.info("Successfully stopped JMS Source Task.")
+    }
   }
 
   override def poll(): util.List[SourceRecord] = {
@@ -63,10 +76,21 @@ class JMSSourceTask extends SourceTask with StrictLogging {
 
     try {
       val polled = reader.poll()
-      records = collection.mutable.Seq(polled.map({ case (_, record) => record }).toSeq: _*)
-      messages = collection.mutable.Seq(polled.map({ case (message, _) => message }).toSeq: _*)
+
+      if(polled.isEmpty) {
+        synchronized {
+          this.wait(pollingTimeout.get())
+        }
+      } else {
+        records = collection.mutable.Seq(polled.map({ case (_, record) => record }).toSeq: _*)
+        messages = collection.mutable.Seq(polled.map({ case (message, _) => message }).toSeq: _*)
+      }
     } finally {
-      if(messages.size > 0) ackMessage = messages.headOption
+      if (messages.size > 0) {
+        ackMessage = messages.headOption
+        val polledRecordsToCommit = records.zip(records).toMap.asJava
+        recordsToCommit.putAll(polledRecordsToCommit)
+      }
     }
 
     if (enableProgress) {
@@ -76,10 +100,14 @@ class JMSSourceTask extends SourceTask with StrictLogging {
     records
   }
 
-  override def commit(): Unit = {
-    ackMessage.foreach(_.acknowledge())
-    ackMessage = None
+  override def commitRecord(record: SourceRecord): Unit = {
+    recordsToCommit.remove(record)
+
+    if (recordsToCommit.isEmpty) {
+      ackMessage.foreach(_.acknowledge())
+      ackMessage = None
+    }
   }
 
-  override def version: String = Option(getClass.getPackage.getImplementationVersion).getOrElse("")
+  override def version: String = manifest.version()
 }

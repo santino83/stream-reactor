@@ -68,3 +68,5 @@ classes/*
 /charts/
 /.vscode
 /.nb-gradle/
+/data
+

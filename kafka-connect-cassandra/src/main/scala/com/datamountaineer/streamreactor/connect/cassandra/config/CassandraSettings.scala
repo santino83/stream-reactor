@@ -48,7 +48,12 @@ case class CassandraSourceSetting(kcql: Kcql,
                                   consistencyLevel: Option[ConsistencyLevel],
                                   errorPolicy: ErrorPolicy = new ThrowErrorPolicy,
                                   taskRetires: Int = CassandraConfigConstants.NBR_OF_RETIRES_DEFAULT,
-                                  fetchSize: Int = CassandraConfigConstants.FETCH_SIZE_DEFAULT
+                                  fetchSize: Int = CassandraConfigConstants.FETCH_SIZE_DEFAULT,
+                                  timeSliceDuration: Long = CassandraConfigConstants.TIMESLICE_DURATION_DEFAULT,
+                                  timeSliceDelay: Long = CassandraConfigConstants.TIMESLICE_DELAY_DEFAULT,
+                                  initialOffset: String = CassandraConfigConstants.INITIAL_OFFSET_DEFAULT,
+                                  timeSliceMillis: Long = CassandraConfigConstants.TIME_SLICE_MILLIS_DEFAULT,
+                                  mappingCollectionToJson: Boolean = CassandraConfigConstants.MAPPING_COLLECTION_TO_JSON_DEFAULT
                                  ) extends CassandraSetting
 
 case class CassandraSinkSetting(keySpace: String,
@@ -83,6 +88,11 @@ object CassandraSettings extends StrictLogging {
     val primaryKeyCols = config.getPrimaryKeyCols()
     val fetchSize = config.getInt(CassandraConfigConstants.FETCH_SIZE)
     val incrementalModes = config.getIncrementalMode(kcqls)
+    val timeSliceDuration = config.getLong(CassandraConfigConstants.TIMESLICE_DURATION)
+    val timeSliceDelay = config.getLong(CassandraConfigConstants.TIMESLICE_DELAY)
+    val initialOffset = config.getString(CassandraConfigConstants.INITIAL_OFFSET)
+    val timeSliceMillis = config.getLong(CassandraConfigConstants.TIME_SLICE_MILLIS)
+    val mappingCollectionToJson = config.getBoolean(CassandraConfigConstants.MAPPING_COLLECTION_TO_JSON)
 
     kcqls.map { r =>
       val tCols = primaryKeyCols(r.getSource)
@@ -104,7 +114,12 @@ object CassandraSettings extends StrictLogging {
         pollInterval = pollInterval,
         errorPolicy = errorPolicy,
         consistencyLevel = consistencyLevel,
-        fetchSize = fetchSize
+        fetchSize = fetchSize,
+        timeSliceDuration = timeSliceDuration,
+        timeSliceDelay = timeSliceDelay,
+        initialOffset = initialOffset,
+        timeSliceMillis = timeSliceMillis,
+        mappingCollectionToJson = mappingCollectionToJson
       )
     }.toSeq
   }
